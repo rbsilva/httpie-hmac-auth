@@ -20,9 +20,10 @@ __licence__ = 'MIT'
 
 
 class HmacAuth:
-    def __init__(self, access_key, secret_key):
+    def __init__(self, custom_type, access_key, secret_key):
         self.access_key = access_key
         self.secret_key = secret_key.encode('ascii')
+        self.custom_type = custom_type
 
     def __call__(self, r):
         method = r.method
@@ -51,15 +52,15 @@ class HmacAuth:
         path = url.path
 
         string_to_sign = '\n'.join([method, content_md5, content_type, httpdate, path]).encode('utf-8')
-        digest = hmac.new(self.secret_key, string_to_sign, hashlib.sha256).digest()
-        signature = base64.encodestring(digest).rstrip().decode('utf-8')
+        digest = hmac.new(self.secret_key, string_to_sign, hashlib.sha512).digest()
+        signature = base64.b64encode(digest)
 
         if self.access_key == '':
-            r.headers['Authorization'] = 'HMAC %s' % signature
+            r.headers['Authorization'] = '%s %s' % (self.custom_type, signature)
         elif self.secret_key == '':
             raise ValueError('HMAC secret key cannot be empty.')
         else:
-            r.headers['Authorization'] = 'HMAC %s:%s' % (self.access_key, signature)
+            r.headers['Authorization'] = '%s %s:%s' % (self.custom_type, self.access_key, signature)
 
         return r
 
@@ -71,4 +72,10 @@ class HmacAuthPlugin(AuthPlugin):
     description = 'Sign requests using a HMAC authentication method like AWS'
 
     def get_auth(self, username=None, password=None):
-        return HmacAuth(username, password)
+
+        try:
+            custom_type, _username = username.split('/')
+            return HmacAuth(custom_type, _username, password)
+        except ValueError:
+            return HmacAuth('HMAC', username, password)
+
